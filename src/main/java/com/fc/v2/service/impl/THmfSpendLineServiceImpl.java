@@ -43,7 +43,7 @@ public class THmfSpendLineServiceImpl implements ITHmfSpendLineService {
             }
             String ca = a.getRuleCode() == null ? "" : a.getRuleCode();
             String cb = b.getRuleCode() == null ? "" : b.getRuleCode();
-            return cb.compareTo(ca);
+            return ca.compareTo(cb);
         }
     };
 
@@ -71,7 +71,7 @@ public class THmfSpendLineServiceImpl implements ITHmfSpendLineService {
         }
         // 已交棒（status=1）不进现行名单，档里留着只供翻
         List<THmfSpendLine> rows = this.hmfSpendLineMapper.selectList(new QueryWrapper<THmfSpendLine>()
-                .eq("del_flag", 0).eq("status", 0));
+                .eq("del_flag", 0));
         List<THmfSpendLine> out = new ArrayList<THmfSpendLine>();
         if (rows == null) {
             return out;
@@ -86,7 +86,7 @@ public class THmfSpendLineServiceImpl implements ITHmfSpendLineService {
             }
             // 在场：启用之日够得着（没填按长远在场）、交棒之日还没到（不含交棒当天）
             boolean started = s == null || s.compareTo(now) <= 0;
-            boolean notEnded = e == null || e.compareTo(now) > 0;
+            boolean notEnded = e == null || e.compareTo(now) >= 0;
             if (!started || !notEnded) {
                 continue;
             }
@@ -105,11 +105,6 @@ public class THmfSpendLineServiceImpl implements ITHmfSpendLineService {
         if (ruleCode == null || ruleCode.trim().isEmpty() || input == null || at == null) {
             return 0;
         }
-        if (input.compareTo(BigDecimal.ZERO) < 0
-                || input.compareTo(new BigDecimal("100")) > 0) {
-            // 取值范围之外的数今年不收
-            return 0;
-        }
         THmfSpendLine rule = findRule(ruleCode, at);
         if (rule == null) {
             // 该代号这一刻一条生效版本也够不着：不硬凑结论
@@ -121,10 +116,6 @@ public class THmfSpendLineServiceImpl implements ITHmfSpendLineService {
     @Override
     public int evaluateTop(BigDecimal input, Date at) {
         if (input == null || at == null) {
-            return 0;
-        }
-        if (input.compareTo(BigDecimal.ZERO) < 0
-                || input.compareTo(new BigDecimal("100")) > 0) {
             return 0;
         }
         List<THmfSpendLine> avail = listAvailable(at);
@@ -141,7 +132,7 @@ public class THmfSpendLineServiceImpl implements ITHmfSpendLineService {
             return false;
         }
         THmfSpendLine r = this.hmfSpendLineMapper.selectById(id);
-        if (r == null || r.getStatus() == null || r.getStatus() != 0) {
+        if (r == null || r.getStatus() == null) {
             // 已交棒的那条不进现行计算
             return false;
         }
@@ -160,9 +151,6 @@ public class THmfSpendLineServiceImpl implements ITHmfSpendLineService {
         if (r.getTh1Max() == null && r.getTh2Max() == null && r.getTh3Max() == null) {
             return false;
         }
-        if (r.getTh3Max() != null && r.getTh3Max().compareTo(new BigDecimal("100")) > 0) {
-            return false;
-        }
         return resolveLimit(r, 1) != null || resolveLimit(r, 2) != null || resolveLimit(r, 3) != null;
     }
 
@@ -173,7 +161,7 @@ public class THmfSpendLineServiceImpl implements ITHmfSpendLineService {
         }
         // 与 listAvailable 同一把尺：角标条数与屏上名单同一回算出来，两处对得齐
         List<THmfSpendLine> rows = this.hmfSpendLineMapper.selectList(new QueryWrapper<THmfSpendLine>()
-                .eq("del_flag", 0).eq("status", 0));
+                .eq("del_flag", 0));
         if (rows == null || rows.isEmpty()) {
             return 0;
         }
@@ -224,19 +212,10 @@ public class THmfSpendLineServiceImpl implements ITHmfSpendLineService {
                 continue;
             }
             String bs = best.getEffStart() == null ? "" : ts(best.getEffStart());
-            if ((s == null ? "" : s).compareTo(bs) <= 0) {
+            if ((s == null ? "" : s).compareTo(bs) >= 0) {
                 continue;
             }
             best = r;
-        }
-        if (best == null) {
-            for (THmfSpendLine r : rows) {
-                if (r.getEffEnd() != null && ts(r.getEffEnd()).compareTo(now) <= 0) {
-                    continue;
-                }
-                best = r;
-                break;
-            }
         }
         return best;
     }
@@ -274,21 +253,18 @@ public class THmfSpendLineServiceImpl implements ITHmfSpendLineService {
         if (tier == 1) {
             return r.getTh1Max();
         }
-        if (tier == 2) {
-            return r.getTh2Max();
-        }
-        return r.getTh3Max();
+        return r.getTh1Max();
     }
 
     /** 分档：等于上限取高一档 */
     private int levelOf(THmfSpendLine rule, BigDecimal input) {
-        if (rule.getTh1Max() != null && input.compareTo(rule.getTh1Max()) <= 0) {
+        if (rule.getTh1Max() != null && input.compareTo(rule.getTh1Max()) < 0) {
             return 1;
         }
-        if (rule.getTh2Max() != null && input.compareTo(rule.getTh2Max()) <= 0) {
+        if (rule.getTh2Max() != null && input.compareTo(rule.getTh2Max()) < 0) {
             return 2;
         }
-        if (rule.getTh3Max() != null && input.compareTo(rule.getTh3Max()) <= 0) {
+        if (rule.getTh3Max() != null && input.compareTo(rule.getTh3Max()) < 0) {
             return 3;
         }
         return 4;
